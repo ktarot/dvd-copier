@@ -1001,18 +1001,23 @@ public sealed class LedMeter : Control
     private int value;
     private bool phase;
 
-    public int Value
-    {
-        get => value;
-        set
-        {
-            this.value = Math.Clamp(value, 0, 100);
-            Invalidate();
-        }
-    }
 
-    public bool Running { get; set; }
-    public bool Dark { get; set; } = true;
+[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+public int Value
+{
+    get => value;
+    set
+    {
+        this.value = Math.Clamp(value, 0, 100);
+        Invalidate();
+    }
+}
+
+[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+public bool Running { get; set; }
+
+[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+public bool Dark { get; set; } = true;
 
     private static readonly int[] DigitMasks =
     {
