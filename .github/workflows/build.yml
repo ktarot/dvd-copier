@@ -1,0 +1,43 @@
+
+name: Build DVD Copier
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish portable Windows EXE
+        shell: pwsh
+        run: |
+          dotnet publish DVD_Copier.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            --output publish
+
+      - name: Upload DVD Copier EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: DVD-Copier-Windows-x64
+          path: publish/DVD_Copier.exe
+          if-no-files-found: error
