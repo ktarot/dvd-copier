@@ -59,6 +59,38 @@ public sealed class MainForm : Form
     private readonly Button stopButton;
     private readonly Button themeButton;
 
+    // Optional compact player underneath the existing copy controls.
+    private readonly AudioEngine audio = new();
+    private LyricsDocument? lyrics;
+    private bool playerExpanded;
+    private readonly System.Windows.Forms.Timer audioTimer = new() { Interval = 500 };
+    private readonly Label trackLabel = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft, Text = "음악을 선택하세요"
+    };
+    private readonly Label lyricLabel = new()
+    {
+        Dock = DockStyle.Fill, AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft, Text = "가사 정보 없음"
+    };
+    private readonly Label playTimeLabel = new()
+    {
+        Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight,
+        Text = "00:00 / 00:00"
+    };
+    private readonly Button audioToggle;
+    private readonly Button audioCdButton;
+    private readonly Button audioFileButton;
+    private readonly Button audioPauseButton;
+    private readonly Button audioStopButton;
+    private readonly Button audioPrevButton;
+    private readonly Button audioNextButton;
+    private readonly Button audioListButton;
+    private readonly Panel audioDetail = new() { Dock = DockStyle.Fill, Padding = new Padding(2) };
+    private TableLayoutPanel rootLayout = null!;
+
+
     private readonly System.Windows.Forms.Timer ledTimer = new()
     {
         Interval = 450
@@ -70,7 +102,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "ODD Copier v2.0";
+        Text = "ODD Copier v2.1";
         Size = new Size(360, 640);
         MinimumSize = Size;
         MaximumSize = Size;
@@ -80,16 +112,17 @@ public sealed class MainForm : Form
         Font = new Font("Segoe UI", 9);
         AutoScaleMode = AutoScaleMode.None;
 
-        var root = new TableLayoutPanel {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Padding = new Padding(8)
+        rootLayout = new TableLayoutPanel {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9, Padding = new Padding(8)
         };
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        foreach (int height in new[] { 32, 66, 64, 122, 68, 68, 0, 42 })
-            root.RowStyles.Add(height == 0 ? new RowStyle(SizeType.Percent, 100)
-                                          : new RowStyle(SizeType.Absolute, height));
+        rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        foreach (int height in new[] { 28, 60, 58, 108, 58, 58, 34, 0, 38 })
+            rootLayout.RowStyles.Add(height == 0 ? new RowStyle(SizeType.Percent, 100)
+                                                 : new RowStyle(SizeType.Absolute, height));
+        var root = rootLayout;
         Controls.Add(root);
 
-        root.Controls.Add(Label("ODD COPIER  /  v2.0", 14, true), 0, 0);
+        root.Controls.Add(Label("ODD COPIER  /  v2.1", 14, true), 0, 0);
 
         // 1. Optical drive family, drive letter and disc-ready status.
         var odd = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2 };
@@ -137,13 +170,65 @@ public sealed class MainForm : Form
         copy.Controls.Add(stopButton, 1, 0);
         root.Controls.Add(copy, 0, 5);
 
+        // Expandable player — copy controls remain visible in the same window.
+        var audioArea = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2
+        };
+        audioArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        audioArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        audioToggle = Button("♫  음악 재생  ▾", "neutral", 9);
+        audioArea.Controls.Add(audioToggle, 0, 0);
+        audioArea.Controls.Add(audioDetail, 0, 1);
+        root.Controls.Add(Card(audioArea), 0, 6);
+        audioDetail.Visible = false;
+
+        var playerLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5
+        };
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        audioDetail.Controls.Add(playerLayout);
+
+        var sources = TwoColumns();
+        audioCdButton = Button("CD 재생", "neutral", 8);
+        audioFileButton = Button("파일 열기", "neutral", 8);
+        sources.Controls.Add(audioCdButton, 0, 0);
+        sources.Controls.Add(audioFileButton, 1, 0);
+        playerLayout.Controls.Add(sources, 0, 0);
+
+        var transport = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
+        for (int c = 0; c < 4; c++)
+            transport.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        audioPrevButton = Button("⏮", "neutral", 10);
+        audioPauseButton = Button("▶/Ⅱ", "neutral", 9);
+        audioNextButton = Button("⏭", "neutral", 10);
+        audioStopButton = Button("■", "neutral", 10);
+        transport.Controls.Add(audioPrevButton, 0, 0);
+        transport.Controls.Add(audioPauseButton, 1, 0);
+        transport.Controls.Add(audioNextButton, 2, 0);
+        transport.Controls.Add(audioStopButton, 3, 0);
+        playerLayout.Controls.Add(transport, 0, 1);
+
+        var now = TwoColumns(72);
+        now.Controls.Add(trackLabel, 0, 0);
+        audioListButton = Button("목록", "neutral", 8);
+        now.Controls.Add(audioListButton, 1, 0);
+        playerLayout.Controls.Add(now, 0, 2);
+        playerLayout.Controls.Add(lyricLabel, 0, 3);
+        playerLayout.Controls.Add(playTimeLabel, 0, 4);
+
         // 6. Status messages
         var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         status.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
         status.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         status.Controls.Add(Label("상태 메시지", 9, true), 0, 0);
         status.Controls.Add(log, 0, 1);
-        root.Controls.Add(Card(status), 0, 6);
+        root.Controls.Add(Card(status), 0, 7);
 
         // 7. Exit / Theme
         var footer = TwoColumns();
@@ -151,9 +236,28 @@ public sealed class MainForm : Form
         themeButton = Button("☀ Light", "neutral", 10);
         footer.Controls.Add(exitButton, 0, 0);
         footer.Controls.Add(themeButton, 1, 0);
-        root.Controls.Add(footer, 0, 7);
+        root.Controls.Add(footer, 0, 8);
 
         themeButton.Click += (_, _) => { dark = !dark; ApplyTheme(); };
+        audioToggle.Click += (_, _) => SetPlayerExpanded(!playerExpanded);
+        audioFileButton.Click += (_, _) => OpenAudioFiles();
+        audioCdButton.Click += (_, _) => OpenAudioCd();
+        audioPauseButton.Click += (_, _) => RunAudioAction(() =>
+        {
+            if (audio.IsPaused) audio.TogglePause();
+            else if (audio.IsPlaying) audio.TogglePause();
+            else audio.Play();
+        });
+        audioStopButton.Click += (_, _) => StopAudio();
+        audioPrevButton.Click += (_, _) => RunAudioAction(() => audio.Previous());
+        audioNextButton.Click += (_, _) => RunAudioAction(() => audio.Next());
+        audioListButton.Click += (_, _) => ShowTracks();
+        audioTimer.Tick += (_, _) => UpdateAudioProgress();
+        meter.MouseClick += (_, e) =>
+        {
+            if (audio.IsActive && e.Y >= meter.Height - 40 && !copying)
+                RunAudioAction(() => audio.SeekFraction((double)e.X / Math.Max(1, meter.Width)));
+        };
         drives.SelectedIndexChanged += (_, _) => UpdateDriveInfo();
         openButton.Click += async (_, _) => await TrayCommandAsync(true);
         closeButton.Click += async (_, _) => await TrayCommandAsync(false);
@@ -173,15 +277,181 @@ public sealed class MainForm : Form
 
         FormClosing += (_, e) =>
         {
-            if (!copying) return;
-            MessageBox.Show("복사 중에는 먼저 복사 중지를 눌러주세요.", "ODD Copier");
-            e.Cancel = true;
+            if (copying)
+            {
+                MessageBox.Show("복사 중에는 먼저 복사 중지를 눌러주세요.", "ODD Copier");
+                e.Cancel = true;
+            }
+            else
+            {
+                audioTimer.Stop();
+                audio.Dispose();
+            }
         };
 
         ApplyTheme();
         RefreshDrives();
         SetBusy(false);
         AddLog("프로그램 준비 완료");
+    }
+
+    // ---------- Optional audio player ----------
+
+    private void SetPlayerExpanded(bool expand)
+    {
+        playerExpanded = expand;
+        audioDetail.Visible = expand;
+        audioToggle.Text = expand ? "♫  음악 재생  ▴" : "♫  음악 재생  ▾";
+        // Keep a readable status area inside the fixed 360x640 window.
+        int[] heights = expand
+            ? new[] { 26, 54, 50, 96, 52, 52, 154, 0, 36 }
+            : new[] { 28, 60, 58, 108, 58, 58, 34, 0, 38 };
+        for (int i = 0; i < heights.Length; i++)
+        {
+            if (heights[i] > 0) rootLayout.RowStyles[i].Height = heights[i];
+        }
+        rootLayout.PerformLayout();
+    }
+
+    private void OpenAudioFiles()
+    {
+        if (copying) return;
+        using var picker = new OpenFileDialog
+        {
+            Title = "PC 또는 ODD의 음악 파일 선택",
+            Filter = "오디오 파일|*.mp3;*.m4a;*.wav;*.wma;*.flac;*.aac;*.aif;*.aiff|모든 파일|*.*",
+            Multiselect = true,
+            CheckFileExists = true
+        };
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        RunAudioAction(() => audio.OpenFiles(picker.FileNames));
+    }
+
+    private void OpenAudioCd()
+    {
+        if (copying) return;
+        string? root = SelectedDrive();
+        if (root is null)
+        {
+            MessageBox.Show("ODD 드라이브를 선택하세요.");
+            return;
+        }
+        RunAudioAction(() => audio.OpenAudioCd(root));
+    }
+
+    private void RunAudioAction(Action action)
+    {
+        if (copying) return;
+        try
+        {
+            action();
+            RefreshAudioTrack();
+            UpdateAudioButtons();
+            if (audio.IsActive)
+            {
+                audioTimer.Start();
+                SetPlayerExpanded(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            StopAudio();
+            AddLog("음악 재생 오류: " + ex.Message);
+            MessageBox.Show(ex.Message, "음악 재생 오류",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void RefreshAudioTrack()
+    {
+        trackLabel.Text = audio.CurrentTitle;
+        lyrics = LyricsDocument.FromAudioFile(audio.CurrentFile);
+        lyricLabel.Text = lyrics?.LineAt(audio.Position) ?? "가사 정보 없음";
+        AddLog(audio.IsActive ? "음악 선택: " + audio.CurrentTitle : "음악 재생 종료");
+    }
+
+    private void UpdateAudioButtons()
+    {
+        bool enabled = audio.IsActive;
+        if (IsDisposed) return;
+        audioPauseButton.Enabled = enabled && !copying;
+        audioStopButton.Enabled = enabled && !copying;
+        audioPrevButton.Enabled = enabled && !copying && audio.TrackIndex > 0;
+        audioNextButton.Enabled = enabled && !copying &&
+                                  audio.TrackIndex + 1 < audio.TrackCount;
+        audioListButton.Enabled = enabled && !copying;
+        audioCdButton.Enabled = !copying;
+        audioFileButton.Enabled = !copying;
+        startButton.Enabled = !copying && !enabled;
+        drives.Enabled = !copying && !enabled;
+        browseButton.Enabled = !copying;
+        audioPauseButton.Text = audio.IsPlaying ? "Ⅱ" : "▶";
+    }
+
+    private void StopAudio()
+    {
+        audioTimer.Stop();
+        audio.Stop();
+        lyrics = null;
+        trackLabel.Text = "음악을 선택하세요";
+        lyricLabel.Text = "가사 정보 없음";
+        playTimeLabel.Text = "00:00 / 00:00";
+        if (!copying)
+        {
+            meter.Value = 0;
+            meter.Running = false;
+        }
+        UpdateAudioButtons();
+    }
+
+    private void UpdateAudioProgress()
+    {
+        if (!audio.IsActive || copying) return;
+        try
+        {
+            if (audio.Update()) RefreshAudioTrack();
+            var position = audio.Position;
+            var length = audio.Duration;
+            int progress = length.TotalMilliseconds <= 0 ? 0 :
+                (int)Math.Clamp(position.TotalMilliseconds * 100 / length.TotalMilliseconds, 0, 100);
+            meter.Value = progress;
+            meter.Running = audio.IsPlaying;
+            if (audio.IsPlaying) meter.Pulse();
+            lyricLabel.Text = lyrics?.LineAt(position) ?? "가사 정보 없음";
+            playTimeLabel.Text = position.ToString(@"mm\:ss") + " / " + length.ToString(@"mm\:ss");
+            audioPauseButton.Text = audio.IsPlaying ? "Ⅱ" : "▶";
+            if (!audio.IsPlaying && !audio.IsPaused) meter.Running = false;
+        }
+        catch (Exception ex)
+        {
+            AddLog("재생 상태 확인 실패: " + ex.Message);
+            StopAudio();
+        }
+    }
+
+    private void ShowTracks()
+    {
+        if (!audio.IsActive) return;
+        using var chooser = new Form
+        {
+            Text = "트랙 목록",
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(320, 350)
+        };
+        var list = new ListBox { Dock = DockStyle.Fill, Font = new Font("Segoe UI", 10) };
+        list.Items.AddRange(audio.TrackNames.Cast<object>().ToArray());
+        list.SelectedIndex = audio.TrackIndex;
+        chooser.Controls.Add(list);
+        list.DoubleClick += (_, _) =>
+        {
+            if (list.SelectedIndex >= 0)
+            {
+                int idx = list.SelectedIndex;
+                chooser.Close();
+                RunAudioAction(() => audio.SelectTrack(idx));
+            }
+        };
+        chooser.ShowDialog(this);
     }
 
     // ---------- UI helpers ----------
@@ -278,6 +548,7 @@ public sealed class MainForm : Form
         folderPath.ForeColor = fg;
         log.BackColor = surface;
         log.ForeColor = fg;
+        audioDetail.BackColor = surface;
         meter.Dark = dark;
         themeButton.Text = dark ? "☀ Light" : "☾ Dark";
         Invalidate(true);
@@ -311,6 +582,8 @@ public sealed class MainForm : Form
         startButton.Enabled = !busy;
         drives.Enabled = !busy;
         stopButton.Enabled = busy;
+        audioToggle.Enabled = !busy;
+        UpdateAudioButtons();
     }
 
     // ---------- DVD drive ----------
@@ -404,6 +677,7 @@ public sealed class MainForm : Form
     private async Task TrayCommandAsync(bool eject)
     {
         if (copying) return;
+        if (audio.IsActive) StopAudio();
 
         string? root = SelectedDrive();
 
@@ -592,6 +866,11 @@ public sealed class MainForm : Form
     private async Task StartFromDiscAsync()
     {
         if (copying) return;
+        if (audio.IsActive)
+        {
+            MessageBox.Show("음악 재생을 중지한 뒤 복사를 시작하세요.");
+            return;
+        }
 
         string? source = SelectedDrive();
 
@@ -886,7 +1165,7 @@ public sealed class MainForm : Form
             cancellation = null;
 
             SetBusy(false);
-            Text = "ODD Copier v2.0";
+            Text = "ODD Copier v2.1";
         }
     }
 }
