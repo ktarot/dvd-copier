@@ -412,7 +412,7 @@ public sealed class MainForm : Form
             meter.Running = audio.IsPlaying;
             if (audio.IsPlaying) meter.Pulse();
             lyricLabel.Text = lyrics?.LineAt(position) ?? "가사 정보 없음";
-            playTimeLabel.Text = $"{position:mm\:ss} / {length:mm\:ss}";
+            playTimeLabel.Text = position.ToString(@"mm\:ss") + " / " + length.ToString(@"mm\:ss");
             audioPauseButton.Text = audio.IsPlaying ? "Ⅱ" : "▶";
             if (!audio.IsPlaying && !audio.IsPaused) meter.Running = false;
         }
