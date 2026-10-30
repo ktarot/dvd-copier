@@ -1,8 +1,10 @@
 
-name: Build DVD Copier
+name: Build ODD Copier
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
