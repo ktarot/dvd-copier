@@ -52,192 +52,131 @@ public sealed class MainForm : Form
 
     private readonly Button openButton;
     private readonly Button closeButton;
-    private readonly Button checkButton;
+    private readonly Label driveKind = new() { Dock = DockStyle.Fill, Text = "ODD", TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Button browseButton;
+    private string? selectedDestination;
     private readonly Button startButton;
     private readonly Button stopButton;
     private readonly Button themeButton;
 
-    private readonly System.Windows.Forms.Timer ledTimer = new()
-    {
-        Interval = 450
-    };
-
-    private CancellationTokenSource? cancellation;
-    private bool copying;
-    private bool dark = true;
-
+    private readonly System.Windows.For
     public MainForm()
     {
-        Text = "DVD Copier v2.0";
-        ClientSize = new Size(880, 850);
-        MinimumSize = new Size(760, 780);
+        Text = "ODD Copier v2.0";
+        Size = new Size(360, 640);
+        MinimumSize = Size;
+        MaximumSize = Size;
+        FormBorderStyle = FormBorderStyle.FixedSingle;
+        MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 11);
-        AutoScaleMode = AutoScaleMode.Dpi;
+        Font = new Font("Segoe UI", 9);
+        AutoScaleMode = AutoScaleMode.None;
 
-        var root = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 8,
-            Padding = new Padding(18)
+        var root = new TableLayoutPanel {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Padding = new Padding(8)
         };
-
-        root.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 100));
-
-        foreach (int height in new[]
-        {
-            54, 84, 152, 82, 104, 0, 112, 62
-        })
-        {
-            root.RowStyles.Add(
-                height == 0
-                ? new RowStyle(SizeType.Percent, 100)
-                : new RowStyle(SizeType.Absolute, height));
-        }
-
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        foreach (int height in new[] { 32, 66, 64, 122, 68, 68, 0, 42 })
+            root.RowStyles.Add(height == 0 ? new RowStyle(SizeType.Percent, 100)
+                                          : new RowStyle(SizeType.Absolute, height));
         Controls.Add(root);
 
-        // Header
-        var header = TwoColumns(78);
-        var title = Label("DVD COPIER  /  v2.0", 19, true);
-        themeButton = Button("☀ Light", "neutral", 11);
+        root.Controls.Add(Label("ODD COPIER  /  v2.0", 14, true), 0, 0);
 
-        header.Controls.Add(title, 0, 0);
-        header.Controls.Add(themeButton, 1, 0);
-        root.Controls.Add(header, 0, 0);
+        // 1. Optical drive family, drive letter and disc-ready status.
+        var odd = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2 };
+        foreach (int pc in new[] { 28, 29, 43 })
+            odd.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, pc));
+        odd.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        odd.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
+        odd.Controls.Add(Label("ODD 종류", 8), 0, 0);
+        odd.Controls.Add(Label("경로", 8), 1, 0);
+        odd.Controls.Add(Label("디스크", 8), 2, 0);
+        odd.Controls.Add(driveKind, 0, 1);
+        odd.Controls.Add(drives, 1, 1);
+        odd.Controls.Add(driveStatus, 2, 1);
+        root.Controls.Add(Card(odd), 0, 1);
 
-        themeButton.Click += (_, _) =>
-        {
-            dark = !dark;
-            ApplyTheme();
-        };
+        // 2. Destination folder.
+        var dest = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+        dest.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 69));
+        dest.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 31));
+        dest.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        dest.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
+        dest.Controls.Add(Label("저장 폴더", 8), 0, 0);
+        dest.Controls.Add(folderPath, 0, 1);
+        browseButton = Button("선택", "neutral", 9);
+        dest.Controls.Add(browseButton, 1, 1);
+        root.Controls.Add(Card(dest), 0, 2);
 
-        // Drive selector
-        var driveRow = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 1
-        };
-
-        driveRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 22));
-        driveRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 51));
-        driveRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 27));
-
-        driveRow.Controls.Add(Label("DVD 드라이브"), 0, 0);
-        driveRow.Controls.Add(drives, 1, 0);
-        driveRow.Controls.Add(driveStatus, 2, 0);
-
-        root.Controls.Add(Card(driveRow), 0, 1);
-
-        // Large remote buttons
-        var trayRow = TwoColumns();
-        openButton = Button("⏏  DVD 열기", "open", 21);
-        closeButton = Button("⏷  DVD 닫기", "close", 21);
-
-        trayRow.Controls.Add(openButton, 0, 0);
-        trayRow.Controls.Add(closeButton, 1, 0);
-        root.Controls.Add(trayRow, 0, 2);
-
-        // Secondary buttons
-        var actionRow = TwoColumns();
-        checkButton = Button("◎  디스크 확인", "neutral", 15);
-        startButton = Button("▶  복사 시작", "start", 15);
-
-        actionRow.Controls.Add(checkButton, 0, 0);
-        actionRow.Controls.Add(startButton, 1, 0);
-        root.Controls.Add(actionRow, 0, 3);
-
-        // Destination folder
-        var folderRow = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 2
-        };
-
-        folderRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 77));
-        folderRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 23));
-        folderRow.RowStyles.Add(
-            new RowStyle(SizeType.Percent, 40));
-        folderRow.RowStyles.Add(
-            new RowStyle(SizeType.Percent, 60));
-
-        var browse = Button("폴더 선택", "neutral", 11);
-
-        folderRow.Controls.Add(Label("저장 폴더"), 0, 0);
-        folderRow.Controls.Add(folderPath, 0, 1);
-        folderRow.Controls.Add(browse, 1, 1);
-
-        root.Controls.Add(Card(folderRow), 0, 4);
-
-        // Retro LED display
+        // 3. LED dot-matrix progress bar with percentage embedded.
         meter.Dock = DockStyle.Fill;
-        root.Controls.Add(Card(meter), 0, 5);
+        root.Controls.Add(Card(meter), 0, 3);
 
-        // Status log
-        var statusPanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1
-        };
+        // 4. Open / Close
+        var tray = TwoColumns();
+        openButton = Button("⏏  열기", "open", 14);
+        closeButton = Button("⏷  닫기", "close", 14);
+        tray.Controls.Add(openButton, 0, 0);
+        tray.Controls.Add(closeButton, 1, 0);
+        root.Controls.Add(tray, 0, 4);
 
-        statusPanel.RowStyles.Add(
-            new RowStyle(SizeType.Absolute, 28));
-        statusPanel.RowStyles.Add(
-            new RowStyle(SizeType.Percent, 100));
+        // 5. Start / Stop copy
+        var copy = TwoColumns();
+        startButton = Button("▶  복사 시작", "start", 12);
+        stopButton = Button("■  복사 중지", "neutral", 12);
+        copy.Controls.Add(startButton, 0, 0);
+        copy.Controls.Add(stopButton, 1, 0);
+        root.Controls.Add(copy, 0, 5);
 
-        statusPanel.Controls.Add(Label("상태 메시지"), 0, 0);
-        statusPanel.Controls.Add(log, 0, 1);
-        root.Controls.Add(Card(statusPanel), 0, 6);
+        // 6. Status messages
+        var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        status.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
+        status.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        status.Controls.Add(Label("상태 메시지", 9, true), 0, 0);
+        status.Controls.Add(log, 0, 1);
+        root.Controls.Add(Card(status), 0, 6);
 
-        // Footer
+        // 7. Exit / Theme
         var footer = TwoColumns();
-        stopButton = Button("■  복사 중지", "neutral", 13);
-        var exitButton = Button("⏻  종료", "neutral", 13);
-
-        footer.Controls.Add(stopButton, 0, 0);
-        footer.Controls.Add(exitButton, 1, 0);
+        var exitButton = Button("⏻  종료", "neutral", 10);
+        themeButton = Button("☀ Light", "neutral", 10);
+        footer.Controls.Add(exitButton, 0, 0);
+        footer.Controls.Add(themeButton, 1, 0);
         root.Controls.Add(footer, 0, 7);
 
-        // Events
-        openButton.Click += async (_, _) =>
-            await TrayCommandAsync(true);
-
-        closeButton.Click += async (_, _) =>
-            await TrayCommandAsync(false);
-
-        checkButton.Click += async (_, _) =>
-            await StartFromDiscAsync();
-
-        startButton.Click += async (_, _) =>
-            await StartFromDiscAsync();
-
-        browse.Click += async (_, _) =>
-            await StartFromDiscAsync();
-
-        stopButton.Click += (_, _) =>
-            cancellation?.Cancel();
-
+        themeButton.Click += (_, _) => { dark = !dark; ApplyTheme(); };
+        drives.SelectedIndexChanged += (_, _) => UpdateDriveInfo();
+        openButton.Click += async (_, _) => await TrayCommandAsync(true);
+        closeButton.Click += async (_, _) => await TrayCommandAsync(false);
+        startButton.Click += async (_, _) => await StartFromDiscAsync();
+        browseButton.Click += (_, _) =>
+        {
+            if (copying) return;
+            string? path = ChooseDestination();
+            if (path is null) return;
+            selectedDestination = path;
+            folderPath.Text = path;
+            AddLog("저장 폴더 선택: " + path);
+        };
+        stopButton.Click += (_, _) => cancellation?.Cancel();
         exitButton.Click += (_, _) => Close();
-
         ledTimer.Tick += (_, _) => meter.Pulse();
 
         FormClosing += (_, e) =>
         {
-            if (copying)
-            {
-                MessageBox.Show(
-                    "복사 중에는 먼저 복사 중지를 눌러주세요.",
-                    "DVD Copier");
+            if (!copying) return;
+            MessageBox.Show("복사 중에는 먼저 복사 중지를 눌러주세요.", "ODD Copier");
+            e.Cancel = true;
+        };
+
+        ApplyTheme();
+        RefreshDrives();
+        SetBusy(false);
+        AddLog("프로그램 준비 완료");
+    }
+
+");
                 e.Cancel = true;
             }
         };
@@ -306,8 +245,8 @@ public sealed class MainForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Fill,
-            Margin = new Padding(4),
-            Padding = new Padding(12)
+            Margin = new Padding(3),
+            Padding = new Padding(7)
         };
 
         panel.Controls.Add(content);
@@ -315,58 +254,34 @@ public sealed class MainForm : Form
         return panel;
     }
 
+
     private void ApplyTheme()
     {
-        Color background = dark
-            ? Color.FromArgb(17, 24, 39)
-            : Color.FromArgb(241, 245, 249);
+        Color bg = dark ? Color.FromArgb(17, 24, 30) : Color.FromArgb(247, 249, 250);
+        Color surface = dark ? Color.FromArgb(30, 40, 48) : Color.White;
+        Color fg = dark ? Color.FromArgb(236, 241, 243) : Color.FromArgb(31, 44, 54);
+        Color neutral = dark ? Color.FromArgb(45, 59, 68) : Color.FromArgb(229, 236, 240);
 
-        Color surface = dark
-            ? Color.FromArgb(31, 41, 55)
-            : Color.White;
-
-        Color foreground = dark
-            ? Color.FromArgb(242, 245, 250)
-            : Color.FromArgb(25, 35, 50);
-
-        BackColor = background;
-        ForeColor = foreground;
-
-        foreach (var card in cards)
-            card.BackColor = surface;
-
+        BackColor = bg;
+        ForeColor = fg;
+        foreach (var card in cards) card.BackColor = surface;
         foreach (var button in buttons)
         {
-            string role = button.Tag?.ToString() ?? "";
-
-            button.BackColor = role switch
-            {
-                "open" => Color.FromArgb(37, 99, 235),
-                "close" => Color.FromArgb(220, 65, 72),
-                "start" => Color.FromArgb(22, 145, 82),
-                _ => dark
-                    ? Color.FromArgb(51, 65, 85)
-                    : Color.FromArgb(220, 229, 238)
-            };
-
-            button.ForeColor = role == "neutral"
-                ? foreground
-                : Color.White;
+            bool primary = (button.Tag?.ToString() ?? "") == "start";
+            button.BackColor = primary ? Color.FromArgb(25, 133, 116) : neutral;
+            button.ForeColor = primary ? Color.White : fg;
+            button.FlatAppearance.MouseOverBackColor = primary
+                ? Color.FromArgb(31, 158, 138)
+                : (dark ? Color.FromArgb(60, 78, 87) : Color.FromArgb(214, 226, 231));
         }
-
-        SetLabelColors(this, foreground);
-
+        SetLabelColors(this, fg);
         drives.BackColor = surface;
-        drives.ForeColor = foreground;
-
+        drives.ForeColor = fg;
         folderPath.BackColor = surface;
-        folderPath.ForeColor = foreground;
-
+        folderPath.ForeColor = fg;
         log.BackColor = surface;
-        log.ForeColor = foreground;
-
+        log.ForeColor = fg;
         meter.Dark = dark;
-
         themeButton.Text = dark ? "☀ Light" : "☾ Dark";
         Invalidate(true);
     }
@@ -395,7 +310,7 @@ public sealed class MainForm : Form
 
         openButton.Enabled = !busy;
         closeButton.Enabled = !busy;
-        checkButton.Enabled = !busy;
+        browseButton.Enabled = !busy;
         startButton.Enabled = !busy;
         drives.Enabled = !busy;
         stopButton.Enabled = busy;
@@ -416,12 +331,65 @@ public sealed class MainForm : Form
         if (drives.Items.Count > 0)
             drives.SelectedIndex = 0;
         else
-            driveStatus.Text = "DVD 드라이브 없음";
+            driveStatus.Text = "ODD 드라이브 없음";
     }
 
     private string? SelectedDrive()
     {
         return drives.SelectedItem?.ToString();
+    }
+
+
+    private void UpdateDriveInfo()
+    {
+        string? root = SelectedDrive();
+        if (root is null) return;
+        driveStatus.Text = DiscReady(root) ? "준비됨" : "디스크 없음";
+        driveKind.Text = "ODD";
+
+        // Win32_CDROMDrive.Name describes the device family, not inserted media.
+        _ = Task.Run(() => DetectDriveKind(root)).ContinueWith(task =>
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    if (!IsDisposed && SelectedDrive() == root)
+                        driveKind.Text = task.IsCompletedSuccessfully
+                            ? task.Result : "ODD";
+                }));
+            }
+            catch (InvalidOperationException) { }
+        });
+    }
+
+    private static string DetectDriveKind(string root)
+    {
+        try
+        {
+            Type? type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator");
+            if (type is null) return "ODD";
+            dynamic locator = Activator.CreateInstance(type)!;
+            dynamic wmi = locator.ConnectServer(".", @"root\cimv2");
+            foreach (dynamic device in wmi.ExecQuery("SELECT Drive, Name FROM Win32_CDROMDrive"))
+            {
+                string letter = Convert.ToString(device.Drive) ?? "";
+                if (letter.Length == 0 ||
+                    char.ToUpperInvariant(letter[0]) != char.ToUpperInvariant(root[0]))
+                    continue;
+
+                string name = (Convert.ToString(device.Name) ?? "").ToUpperInvariant();
+                if (name.Contains("BLU") || name.Contains("BD-") ||
+                    name.Contains("BDR") || name.Contains("BD ROM"))
+                    return "BD";
+                if (name.Contains("DVD")) return "DVD";
+                if (name.Contains("CD")) return "CD";
+                return "ODD";
+            }
+        }
+        catch { /* WMI unavailable; use ODD fallback. */ }
+        return "ODD";
     }
 
     private static bool DiscReady(string root)
@@ -477,13 +445,13 @@ public sealed class MainForm : Form
 
             if (ready)
             {
-                driveStatus.Text = "디스크 준비됨";
-                await StartFromDiscAsync();
+                driveStatus.Text = "준비됨";
+                AddLog("디스크 준비 완료. 복사 시작 버튼을 누르세요.");
             }
             else
             {
                 driveStatus.Text = "디스크 확인 필요";
-                AddLog("디스크 인식 후 '디스크 확인'을 누르세요.");
+                AddLog("디스크 인식 후 복사 시작 버튼을 누르세요.");
             }
         }
         catch (Exception ex)
@@ -493,7 +461,7 @@ public sealed class MainForm : Form
             MessageBox.Show(
                 "드라이브 명령을 실행하지 못했습니다.\n" +
                 "닫기 기능을 지원하지 않으면 직접 트레이를 닫고 " +
-                "'디스크 확인'을 누르세요.\n\n" + ex.Message,
+                "'복사 시작'을 누르세요.\n\n" + ex.Message,
                 "DVD 드라이브");
         }
         finally
@@ -525,7 +493,7 @@ public sealed class MainForm : Form
             Left = 20,
             Top = 22,
             Width = 380,
-            Text = "DVD_" + DateTime.Now.ToString("yyyyMMdd_HHmmss")
+            Text = "ODD_" + DateTime.Now.ToString("yyyyMMdd_HHmmss")
         };
 
         var ok = new Button
@@ -632,7 +600,7 @@ public sealed class MainForm : Form
 
         if (source == null)
         {
-            MessageBox.Show("DVD 드라이브를 선택하세요.");
+            MessageBox.Show("ODD 드라이브를 선택하세요.");
             return;
         }
 
@@ -641,14 +609,19 @@ public sealed class MainForm : Form
         if (!ready)
         {
             driveStatus.Text = "디스크 없음";
-            MessageBox.Show("DVD를 삽입한 후 디스크를 확인하세요.");
+            MessageBox.Show("디스크를 삽입한 후 복사 시작을 누르세요.");
             return;
         }
 
         driveStatus.Text = "디스크 준비됨";
 
-        string? destination = ChooseDestination();
-        if (destination == null) return;
+        string? destination = selectedDestination;
+        if (destination is null)
+        {
+            destination = ChooseDestination();
+            if (destination is null) return;
+            selectedDestination = destination;
+        }
 
         folderPath.Text = destination;
         await CopyDiscAsync(source, destination);
@@ -726,7 +699,7 @@ public sealed class MainForm : Form
 
             if (p.CompletedFiles > 0)
             {
-                Text = $"DVD Copier - {meter.Value}%";
+                Text = $"ODD Copier - {meter.Value}%";
             }
         });
 
@@ -916,7 +889,7 @@ public sealed class MainForm : Form
             cancellation = null;
 
             SetBusy(false);
-            Text = "DVD Copier v2.0";
+            Text = "ODD Copier v2.0";
         }
     }
 }
