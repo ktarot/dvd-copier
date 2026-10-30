@@ -69,10 +69,12 @@ public sealed class MainForm : Form
         Dock = DockStyle.Fill, AutoEllipsis = true,
         TextAlign = ContentAlignment.MiddleLeft, Text = "음악을 선택하세요"
     };
-    private readonly Label lyricLabel = new()
+    private readonly TextBox lyricLabel = new()
     {
-        Dock = DockStyle.Fill, AutoEllipsis = true,
-        TextAlign = ContentAlignment.MiddleLeft, Text = "가사 정보 없음"
+        Dock = DockStyle.Fill, ReadOnly = true, Multiline = true,
+        TextAlign = HorizontalAlignment.Center, ScrollBars = ScrollBars.Vertical,
+        BorderStyle = BorderStyle.None, WordWrap = true,
+        Text = "가사 정보 없음"
     };
     private readonly Label playTimeLabel = new()
     {
@@ -87,8 +89,15 @@ public sealed class MainForm : Form
     private readonly Button audioPrevButton;
     private readonly Button audioNextButton;
     private readonly Button audioListButton;
-    private readonly Panel audioDetail = new() { Dock = DockStyle.Fill, Padding = new Padding(2) };
+    private readonly Panel audioDetail = new()
+    {
+        Dock = DockStyle.Fill,
+        Padding = new Padding(0),
+        AutoScroll = true
+    };
     private TableLayoutPanel rootLayout = null!;
+    private TableLayoutPanel playerLayout = null!;
+    private bool updatingLayout;
 
 
     private readonly System.Windows.Forms.Timer ledTimer = new()
@@ -104,21 +113,21 @@ public sealed class MainForm : Form
     {
         Text = "ODD Copier v2.1";
         Size = new Size(360, 640);
-        MinimumSize = Size;
-        MaximumSize = Size;
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        MinimumSize = new Size(340, 570);
+        FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9);
-        AutoScaleMode = AutoScaleMode.None;
+        AutoScaleMode = AutoScaleMode.Dpi;
 
         rootLayout = new TableLayoutPanel {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9, Padding = new Padding(8)
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9,
+            Padding = new Padding(8), AutoScroll = true
         };
         rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        foreach (int height in new[] { 28, 60, 58, 108, 58, 58, 34, 0, 38 })
-            rootLayout.RowStyles.Add(height == 0 ? new RowStyle(SizeType.Percent, 100)
-                                                 : new RowStyle(SizeType.Absolute, height));
+        for (int row = 0; row < 9; row++)
+            rootLayout.RowStyles.Add(row == 7 ? new RowStyle(SizeType.Percent, 100)
+                                               : new RowStyle(SizeType.Absolute, 40));
         var root = rootLayout;
         Controls.Add(root);
 
@@ -175,7 +184,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2
         };
-        audioArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        audioArea.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
         audioArea.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         audioToggle = Button("♫  음악 재생  ▾", "neutral", 9);
         audioArea.Controls.Add(audioToggle, 0, 0);
@@ -183,15 +192,19 @@ public sealed class MainForm : Form
         root.Controls.Add(Card(audioArea), 0, 6);
         audioDetail.Visible = false;
 
-        var playerLayout = new TableLayoutPanel
+        // The drawer scrolls internally rather than squeezing controls into
+        // a shorter-than-content area on 125%-150% display scaling.
+        playerLayout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5
+            Dock = DockStyle.Top, ColumnCount = 1, RowCount = 5,
+            Height = 124, Margin = new Padding(0), Padding = new Padding(0),
+            AutoSize = false
         };
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         audioDetail.Controls.Add(playerLayout);
 
         var sources = TwoColumns();
@@ -224,7 +237,7 @@ public sealed class MainForm : Form
 
         // 6. Status messages
         var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        status.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
+        status.RowStyles.Add(new RowStyle(SizeType.Absolute, 19));
         status.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         status.Controls.Add(Label("상태 메시지", 9, true), 0, 0);
         status.Controls.Add(log, 0, 1);
@@ -289,7 +302,9 @@ public sealed class MainForm : Form
             }
         };
 
+        ClientSizeChanged += (_, _) => UpdateResponsiveLayout();
         ApplyTheme();
+        UpdateResponsiveLayout();
         RefreshDrives();
         SetBusy(false);
         AddLog("프로그램 준비 완료");
@@ -299,18 +314,63 @@ public sealed class MainForm : Form
 
     private void SetPlayerExpanded(bool expand)
     {
+        if (copying && expand) return;
         playerExpanded = expand;
         audioDetail.Visible = expand;
         audioToggle.Text = expand ? "♫  음악 재생  ▴" : "♫  음악 재생  ▾";
-        // Keep a readable status area inside the fixed 360x640 window.
-        int[] heights = expand
-            ? new[] { 26, 54, 50, 96, 52, 52, 154, 0, 36 }
-            : new[] { 28, 60, 58, 108, 58, 58, 34, 0, 38 };
-        for (int i = 0; i < heights.Length; i++)
+        UpdateResponsiveLayout();
+    }
+
+    /// <summary>
+    /// Responsive row allocation for a 360×640 default window.
+    /// All primary ODD functions remain visible. The player opens as a
+    /// dedicated drawer; only the status log shrinks to one row.
+    /// If DPI or a narrow client cannot fit, the drawer itself scrolls.
+    /// </summary>
+    private void UpdateResponsiveLayout()
+    {
+        if (rootLayout.IsDisposed || updatingLayout) return;
+        updatingLayout = true;
+        try
         {
-            if (heights[i] > 0) rootLayout.RowStyles[i].Height = heights[i];
+            int contentHeight = Math.Max(320,
+                rootLayout.ClientSize.Height - rootLayout.Padding.Vertical);
+            // Keep minimum touch targets for the tray and copy controls.
+            int[] fixedRows = playerExpanded
+                ? new[] { 25, 50, 49, 83, 52, 52, 178, 0, 35 }
+                : new[] { 27, 57, 54, 104, 57, 57, 34, 0, 35 };
+
+            int fixedSum = fixedRows.Sum();
+            // When expanded, make room for at least one complete status line.
+            // The audio content gets a scrollbar if DPI limits available height.
+            if (playerExpanded)
+            {
+                int statusMin = 43;
+                int remaining = contentHeight - fixedSum;
+                if (remaining < statusMin)
+                    fixedRows[6] = Math.Max(120, fixedRows[6] - (statusMin - remaining));
+            }
+            rootLayout.SuspendLayout();
+            for (int i = 0; i < fixedRows.Length; i++)
+            {
+                var style = rootLayout.RowStyles[i];
+                if (i == 7)
+                {
+                    style.SizeType = SizeType.Percent;
+                    style.Height = 100;
+                }
+                else
+                {
+                    style.SizeType = SizeType.Absolute;
+                    style.Height = fixedRows[i];
+                }
+            }
+            rootLayout.ResumeLayout(true);
         }
-        rootLayout.PerformLayout();
+        finally
+        {
+            updatingLayout = false;
+        }
     }
 
     private void OpenAudioFiles()
@@ -549,6 +609,8 @@ public sealed class MainForm : Form
         log.BackColor = surface;
         log.ForeColor = fg;
         audioDetail.BackColor = surface;
+        lyricLabel.BackColor = surface;
+        lyricLabel.ForeColor = fg;
         meter.Dark = dark;
         themeButton.Text = dark ? "☀ Light" : "☾ Dark";
         Invalidate(true);
@@ -955,6 +1017,8 @@ public sealed class MainForm : Form
     private async Task CopyDiscAsync(
         string source, string destination)
     {
+        // Return to the full copy-focused layout during a copy operation.
+        if (playerExpanded) SetPlayerExpanded(false);
         SetBusy(true);
         cancellation = new CancellationTokenSource();
 
