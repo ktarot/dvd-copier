@@ -59,7 +59,15 @@ public sealed class MainForm : Form
     private readonly Button stopButton;
     private readonly Button themeButton;
 
-    private readonly System.Windows.For
+    private readonly System.Windows.Forms.Timer ledTimer = new()
+    {
+        Interval = 450
+    };
+
+    private CancellationTokenSource? cancellation;
+    private bool copying;
+    private bool dark = true;
+
     public MainForm()
     {
         Text = "ODD Copier v2.0";
@@ -168,17 +176,6 @@ public sealed class MainForm : Form
             if (!copying) return;
             MessageBox.Show("복사 중에는 먼저 복사 중지를 눌러주세요.", "ODD Copier");
             e.Cancel = true;
-        };
-
-        ApplyTheme();
-        RefreshDrives();
-        SetBusy(false);
-        AddLog("프로그램 준비 완료");
-    }
-
-");
-                e.Cancel = true;
-            }
         };
 
         ApplyTheme();
