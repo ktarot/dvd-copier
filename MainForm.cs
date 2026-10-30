@@ -967,35 +967,39 @@ internal static class DriveHardware
     }
 }
 
-// ---------- Retro 7-segment LED meter ----------
+// ---------- Retro LED dot matrix progress meter ----------
 
 public sealed class LedMeter : Control
 {
     private int value;
     private bool phase;
 
-
-[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-public int Value
-{
-    get => value;
-    set
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int Value
     {
-        this.value = Math.Clamp(value, 0, 100);
-        Invalidate();
+        get => value;
+        set { this.value = Math.Clamp(value, 0, 100); Invalidate(); }
     }
-}
 
-[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-public bool Running { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Running { get; set; }
 
-[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-public bool Dark { get; set; } = true;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Dark { get; set; } = true;
 
-    private static readonly int[] DigitMasks =
+    private static readonly Dictionary<char, string[]> Glyphs = new()
     {
-        0x3F, 0x06, 0x5B, 0x4F, 0x66,
-        0x6D, 0x7D, 0x07, 0x7F, 0x6F
+        ['0'] = new[] { "11111", "10001", "10011", "10101", "11001", "10001", "11111" },
+        ['1'] = new[] { "00100", "01100", "00100", "00100", "00100", "00100", "01110" },
+        ['2'] = new[] { "11111", "00001", "00001", "11111", "10000", "10000", "11111" },
+        ['3'] = new[] { "11111", "00001", "00001", "01111", "00001", "00001", "11111" },
+        ['4'] = new[] { "10001", "10001", "10001", "11111", "00001", "00001", "00001" },
+        ['5'] = new[] { "11111", "10000", "10000", "11111", "00001", "00001", "11111" },
+        ['6'] = new[] { "11111", "10000", "10000", "11111", "10001", "10001", "11111" },
+        ['7'] = new[] { "11111", "00001", "00010", "00100", "01000", "01000", "01000" },
+        ['8'] = new[] { "11111", "10001", "10001", "11111", "10001", "10001", "11111" },
+        ['9'] = new[] { "11111", "10001", "10001", "11111", "00001", "00001", "11111" },
+        ['%'] = new[] { "11001", "11010", "00100", "00100", "01000", "10110", "00110" }
     };
 
     public LedMeter()
@@ -1013,156 +1017,65 @@ public bool Dark { get; set; } = true;
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        var g = e.Graphics;
-        g.Clear(Dark
-            ? Color.FromArgb(11, 20, 27)
-            : Color.FromArgb(222, 233, 238));
+        Color bg = Dark ? Color.FromArgb(13, 24, 29) : Color.FromArgb(225, 237, 237);
+        Color off = Dark ? Color.FromArgb(37, 61, 58) : Color.FromArgb(181, 208, 201);
+        Color on = Dark ? Color.FromArgb(68, 222, 169) : Color.FromArgb(16, 130, 104);
+        g.Clear(bg);
 
-        Color off = Dark
-            ? Color.FromArgb(35, 55, 53)
-            : Color.FromArgb(180, 200, 195);
+        // 5x7 LED dot matrix glyphs for the numeric percentage.
+        string str = value.ToString() + "%";
+        const int dot = 4, pitch = 6, stride = 38;
+        int startX = Math.Max(2, (Width - str.Length * stride) / 2);
+        int startY = Math.Max(4, (Height - 90) / 2);
+        using var dimBrush = new SolidBrush(off);
+        using var litBrush = new SolidBrush(on);
 
-        Color on = Color.FromArgb(51, 237, 122);
-
-        // 7-segment progress number.
-        string number = value.ToString();
-
-        int digitW = 32;
-        int digitH = 55;
-        int gap = 8;
-
-        int totalW = number.Length * (digitW + gap) + 42;
-        int startX = (Width - totalW) / 2;
-        int digitY = Math.Max(6, (Height - 100) / 2 - 8);
-
-        for (int i = 0; i < number.Length; i++)
+        for (int n = 0; n < str.Length; n++)
         {
-            DrawDigit(
-                g,
-                number[i] - '0',
-                startX + i * (digitW + gap),
-                digitY,
-                digitW,
-                digitH,
-                on,
-                off);
+            if (!Glyphs.TryGetValue(str[n], out var rows)) continue;
+            int gx = startX + n * stride;
+            for (int y = 0; y < 7; y++)
+            for (int x = 0; x < 5; x++)
+                g.FillEllipse(rows[y][x] == '1' ? litBrush : dimBrush,
+                    gx + x * pitch, startY + y * pitch, dot, dot);
         }
 
-        using (var font = new Font(
-            "Consolas", 24, FontStyle.Bold))
-        using (var brush = new SolidBrush(on))
+        // Ten LED sections, each covering 10%; current section's brightness
+        // represents 1% increments, and it pulses during copying.
+        int gap = 3, pad = 7;
+        int width = Math.Max(10, (Width - 2 * pad - 9 * gap) / 10);
+        int y0 = Height - 34;
+        int full = value / 10;
+        float fraction = value % 10 / 10f;
+
+        for (int block = 0; block < 10; block++)
         {
-            g.DrawString(
-                "%",
-                font,
-                brush,
-                startX + number.Length * (digitW + gap),
-                digitY + 12);
-        }
+            float intensity = block < full ? 1f
+                : block == full && value < 100 ? fraction : 0f;
+            if (Running && phase && block == full && value < 100)
+                intensity = 1f - intensity;
 
-        // Ten LED blocks: each block represents 10%.
-        int margin = 12;
-        int blockGap = 6;
-        int blockWidth =
-            Math.Max(3, (Width - margin * 2 -
-                blockGap * 9) / 10);
-
-        int blockHeight = 30;
-        int blockY = Height - 45;
-
-        int fullBlocks = value / 10;
-        float partialBrightness = (value % 10) / 10f;
-
-        for (int i = 0; i < 10; i++)
-        {
-            float intensity;
-
-            if (i < fullBlocks)
+            Color c = Mix(off, on, intensity);
+            using var brush = new SolidBrush(c);
+            int x0 = pad + block * (width + gap);
+            for (int r = 0; r < 3; r++)
+            for (int col = 0; col < 4; col++)
             {
-                intensity = 1f;
+                int dx = x0 + (col * (width - 5)) / 4;
+                g.FillEllipse(brush, dx, y0 + r * 7, 4, 4);
             }
-            else if (i == fullBlocks && value < 100)
-            {
-                intensity = partialBrightness;
-
-                // Invert the active block while copying.
-                if (Running && phase)
-                    intensity = 1f - intensity;
-            }
-            else
-            {
-                intensity = 0f;
-            }
-
-            Color current = Mix(off, on, intensity);
-
-            using var brush = new SolidBrush(current);
-
-            g.FillRectangle(
-                brush,
-                margin + i * (blockWidth + blockGap),
-                blockY,
-                blockWidth,
-                blockHeight);
         }
     }
 
     private static Color Mix(Color a, Color b, float t)
     {
-        t = Math.Clamp(t, 0f, 1f);
-
+        t = Math.Clamp(t, 0, 1);
         return Color.FromArgb(
             (int)(a.R + (b.R - a.R) * t),
             (int)(a.G + (b.G - a.G) * t),
             (int)(a.B + (b.B - a.B) * t));
-    }
-
-    private static void DrawDigit(
-        Graphics g,
-        int number,
-        int x,
-        int y,
-        int width,
-        int height,
-        Color on,
-        Color off)
-    {
-        int t = 5;
-        int half = height / 2;
-
-        Rectangle[] segments =
-        {
-            // a: top
-            new(x + t, y, width - 2*t, t),
-
-            // b: upper right
-            new(x + width - t, y + t, t, half - t),
-
-            // c: lower right
-            new(x + width - t, y + half, t, half - t),
-
-            // d: bottom
-            new(x + t, y + height - t, width - 2*t, t),
-
-            // e: lower left
-            new(x, y + half, t, half - t),
-
-            // f: upper left
-            new(x, y + t, t, half - t),
-
-            // g: middle
-            new(x + t, y + half - t/2, width - 2*t, t)
-        };
-
-        int mask = DigitMasks[Math.Clamp(number, 0, 9)];
-
-        for (int i = 0; i < 7; i++)
-        {
-            bool lit = (mask & (1 << i)) != 0;
-
-            using var brush = new SolidBrush(lit ? on : off);
-            g.FillRectangle(brush, segments[i]);
-        }
     }
 }
