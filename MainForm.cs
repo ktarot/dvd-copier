@@ -52,192 +52,131 @@ public sealed class MainForm : Form
 
     private readonly Button openButton;
     private readonly Button closeButton;
-    private readonly Button checkButton;
+    private readonly Label driveKind = new() { Dock = DockStyle.Fill, Text = "ODD", TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Button browseButton;
+    private string? selectedDestination;
     private readonly Button startButton;
     private readonly Button stopButton;
     private readonly Button themeButton;
 
-    private readonly System.Windows.Forms.Timer ledTimer = new()
-    {
-        Interval = 450
-    };
-
-    private CancellationTokenSource? cancellation;
-    private bool copying;
-    private bool dark = true;
-
+    private readonly System.Windows.For
     public MainForm()
     {
-        Text = "DVD Copier v2.0";
-        ClientSize = new Size(880, 850);
-        MinimumSize = new Size(760, 780);
+        Text = "ODD Copier v2.0";
+        Size = new Size(360, 640);
+        MinimumSize = Size;
+        MaximumSize = Size;
+        FormBorderStyle = FormBorderStyle.FixedSingle;
+        MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 11);
-        AutoScaleMode = AutoScaleMode.Dpi;
+        Font = new Font("Segoe UI", 9);
+        AutoScaleMode = AutoScaleMode.None;
 
-        var root = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 8,
-            Padding = new Padding(18)
+        var root = new TableLayoutPanel {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Padding = new Padding(8)
         };
-
-        root.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 100));
-
-        foreach (int height in new[]
-        {
-            54, 84, 152, 82, 104, 0, 112, 62
-        })
-        {
-            root.RowStyles.Add(
-                height == 0
-                ? new RowStyle(SizeType.Percent, 100)
-                : new RowStyle(SizeType.Absolute, height));
-        }
-
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        foreach (int height in new[] { 32, 66, 64, 122, 68, 68, 0, 42 })
+            root.RowStyles.Add(height == 0 ? new RowStyle(SizeType.Percent, 100)
+                                          : new RowStyle(SizeType.Absolute, height));
         Controls.Add(root);
 
-        // Header
-        var header = TwoColumns(78);
-        var title = Label("DVD COPIER  /  v2.0", 19, true);
-        themeButton = Button("☀ Light", "neutral", 11);
+        root.Controls.Add(Label("ODD COPIER  /  v2.0", 14, true), 0, 0);
 
-        header.Controls.Add(title, 0, 0);
-        header.Controls.Add(themeButton, 1, 0);
-        root.Controls.Add(header, 0, 0);
+        // 1. Optical drive family, drive letter and disc-ready status.
+        var odd = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2 };
+        foreach (int pc in new[] { 28, 29, 43 })
+            odd.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, pc));
+        odd.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        odd.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
+        odd.Controls.Add(Label("ODD 종류", 8), 0, 0);
+        odd.Controls.Add(Label("경로", 8), 1, 0);
+        odd.Controls.Add(Label("디스크", 8), 2, 0);
+        odd.Controls.Add(driveKind, 0, 1);
+        odd.Controls.Add(drives, 1, 1);
+        odd.Controls.Add(driveStatus, 2, 1);
+        root.Controls.Add(Card(odd), 0, 1);
 
-        themeButton.Click += (_, _) =>
-        {
-            dark = !dark;
-            ApplyTheme();
-        };
+        // 2. Destination folder.
+        var dest = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+        dest.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 69));
+        dest.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 31));
+        dest.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        dest.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
+        dest.Controls.Add(Label("저장 폴더", 8), 0, 0);
+        dest.Controls.Add(folderPath, 0, 1);
+        browseButton = Button("선택", "neutral", 9);
+        dest.Controls.Add(browseButton, 1, 1);
+        root.Controls.Add(Card(dest), 0, 2);
 
-        // Drive selector
-        var driveRow = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 1
-        };
-
-        driveRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 22));
-        driveRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 51));
-        driveRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 27));
-
-        driveRow.Controls.Add(Label("DVD 드라이브"), 0, 0);
-        driveRow.Controls.Add(drives, 1, 0);
-        driveRow.Controls.Add(driveStatus, 2, 0);
-
-        root.Controls.Add(Card(driveRow), 0, 1);
-
-        // Large remote buttons
-        var trayRow = TwoColumns();
-        openButton = Button("⏏  DVD 열기", "open", 21);
-        closeButton = Button("⏷  DVD 닫기", "close", 21);
-
-        trayRow.Controls.Add(openButton, 0, 0);
-        trayRow.Controls.Add(closeButton, 1, 0);
-        root.Controls.Add(trayRow, 0, 2);
-
-        // Secondary buttons
-        var actionRow = TwoColumns();
-        checkButton = Button("◎  디스크 확인", "neutral", 15);
-        startButton = Button("▶  복사 시작", "start", 15);
-
-        actionRow.Controls.Add(checkButton, 0, 0);
-        actionRow.Controls.Add(startButton, 1, 0);
-        root.Controls.Add(actionRow, 0, 3);
-
-        // Destination folder
-        var folderRow = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 2
-        };
-
-        folderRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 77));
-        folderRow.ColumnStyles.Add(
-            new ColumnStyle(SizeType.Percent, 23));
-        folderRow.RowStyles.Add(
-            new RowStyle(SizeType.Percent, 40));
-        folderRow.RowStyles.Add(
-            new RowStyle(SizeType.Percent, 60));
-
-        var browse = Button("폴더 선택", "neutral", 11);
-
-        folderRow.Controls.Add(Label("저장 폴더"), 0, 0);
-        folderRow.Controls.Add(folderPath, 0, 1);
-        folderRow.Controls.Add(browse, 1, 1);
-
-        root.Controls.Add(Card(folderRow), 0, 4);
-
-        // Retro LED display
+        // 3. LED dot-matrix progress bar with percentage embedded.
         meter.Dock = DockStyle.Fill;
-        root.Controls.Add(Card(meter), 0, 5);
+        root.Controls.Add(Card(meter), 0, 3);
 
-        // Status log
-        var statusPanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            RowCount = 2,
-            ColumnCount = 1
-        };
+        // 4. Open / Close
+        var tray = TwoColumns();
+        openButton = Button("⏏  열기", "open", 14);
+        closeButton = Button("⏷  닫기", "close", 14);
+        tray.Controls.Add(openButton, 0, 0);
+        tray.Controls.Add(closeButton, 1, 0);
+        root.Controls.Add(tray, 0, 4);
 
-        statusPanel.RowStyles.Add(
-            new RowStyle(SizeType.Absolute, 28));
-        statusPanel.RowStyles.Add(
-            new RowStyle(SizeType.Percent, 100));
+        // 5. Start / Stop copy
+        var copy = TwoColumns();
+        startButton = Button("▶  복사 시작", "start", 12);
+        stopButton = Button("■  복사 중지", "neutral", 12);
+        copy.Controls.Add(startButton, 0, 0);
+        copy.Controls.Add(stopButton, 1, 0);
+        root.Controls.Add(copy, 0, 5);
 
-        statusPanel.Controls.Add(Label("상태 메시지"), 0, 0);
-        statusPanel.Controls.Add(log, 0, 1);
-        root.Controls.Add(Card(statusPanel), 0, 6);
+        // 6. Status messages
+        var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        status.RowStyles.Add(new RowStyle(SizeType.Absolute, 23));
+        status.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        status.Controls.Add(Label("상태 메시지", 9, true), 0, 0);
+        status.Controls.Add(log, 0, 1);
+        root.Controls.Add(Card(status), 0, 6);
 
-        // Footer
+        // 7. Exit / Theme
         var footer = TwoColumns();
-        stopButton = Button("■  복사 중지", "neutral", 13);
-        var exitButton = Button("⏻  종료", "neutral", 13);
-
-        footer.Controls.Add(stopButton, 0, 0);
-        footer.Controls.Add(exitButton, 1, 0);
+        var exitButton = Button("⏻  종료", "neutral", 10);
+        themeButton = Button("☀ Light", "neutral", 10);
+        footer.Controls.Add(exitButton, 0, 0);
+        footer.Controls.Add(themeButton, 1, 0);
         root.Controls.Add(footer, 0, 7);
 
-        // Events
-        openButton.Click += async (_, _) =>
-            await TrayCommandAsync(true);
-
-        closeButton.Click += async (_, _) =>
-            await TrayCommandAsync(false);
-
-        checkButton.Click += async (_, _) =>
-            await StartFromDiscAsync();
-
-        startButton.Click += async (_, _) =>
-            await StartFromDiscAsync();
-
-        browse.Click += async (_, _) =>
-            await StartFromDiscAsync();
-
-        stopButton.Click += (_, _) =>
-            cancellation?.Cancel();
-
+        themeButton.Click += (_, _) => { dark = !dark; ApplyTheme(); };
+        drives.SelectedIndexChanged += (_, _) => UpdateDriveInfo();
+        openButton.Click += async (_, _) => await TrayCommandAsync(true);
+        closeButton.Click += async (_, _) => await TrayCommandAsync(false);
+        startButton.Click += async (_, _) => await StartFromDiscAsync();
+        browseButton.Click += (_, _) =>
+        {
+            if (copying) return;
+            string? path = ChooseDestination();
+            if (path is null) return;
+            selectedDestination = path;
+            folderPath.Text = path;
+            AddLog("저장 폴더 선택: " + path);
+        };
+        stopButton.Click += (_, _) => cancellation?.Cancel();
         exitButton.Click += (_, _) => Close();
-
         ledTimer.Tick += (_, _) => meter.Pulse();
 
         FormClosing += (_, e) =>
         {
-            if (copying)
-            {
-                MessageBox.Show(
-                    "복사 중에는 먼저 복사 중지를 눌러주세요.",
-                    "DVD Copier");
+            if (!copying) return;
+            MessageBox.Show("복사 중에는 먼저 복사 중지를 눌러주세요.", "ODD Copier");
+            e.Cancel = true;
+        };
+
+        ApplyTheme();
+        RefreshDrives();
+        SetBusy(false);
+        AddLog("프로그램 준비 완료");
+    }
+
+");
                 e.Cancel = true;
             }
         };
@@ -306,8 +245,8 @@ public sealed class MainForm : Form
         var panel = new Panel
         {
             Dock = DockStyle.Fill,
-            Margin = new Padding(4),
-            Padding = new Padding(12)
+            Margin = new Padding(3),
+            Padding = new Padding(7)
         };
 
         panel.Controls.Add(content);
@@ -315,58 +254,34 @@ public sealed class MainForm : Form
         return panel;
     }
 
+
     private void ApplyTheme()
     {
-        Color background = dark
-            ? Color.FromArgb(17, 24, 39)
-            : Color.FromArgb(241, 245, 249);
+        Color bg = dark ? Color.FromArgb(17, 24, 30) : Color.FromArgb(247, 249, 250);
+        Color surface = dark ? Color.FromArgb(30, 40, 48) : Color.White;
+        Color fg = dark ? Color.FromArgb(236, 241, 243) : Color.FromArgb(31, 44, 54);
+        Color neutral = dark ? Color.FromArgb(45, 59, 68) : Color.FromArgb(229, 236, 240);
 
-        Color surface = dark
-            ? Color.FromArgb(31, 41, 55)
-            : Color.White;
-
-        Color foreground = dark
-            ? Color.FromArgb(242, 245, 250)
-            : Color.FromArgb(25, 35, 50);
-
-        BackColor = background;
-        ForeColor = foreground;
-
-        foreach (var card in cards)
-            card.BackColor = surface;
-
+        BackColor = bg;
+        ForeColor = fg;
+        foreach (var card in cards) card.BackColor = surface;
         foreach (var button in buttons)
         {
-            string role = button.Tag?.ToString() ?? "";
-
-            button.BackColor = role switch
-            {
-                "open" => Color.FromArgb(37, 99, 235),
-                "close" => Color.FromArgb(220, 65, 72),
-                "start" => Color.FromArgb(22, 145, 82),
-                _ => dark
-                    ? Color.FromArgb(51, 65, 85)
-                    : Color.FromArgb(220, 229, 238)
-            };
-
-            button.ForeColor = role == "neutral"
-                ? foreground
-                : Color.White;
+            bool primary = (button.Tag?.ToString() ?? "") == "start";
+            button.BackColor = primary ? Color.FromArgb(25, 133, 116) : neutral;
+            button.ForeColor = primary ? Color.White : fg;
+            button.FlatAppearance.MouseOverBackColor = primary
+                ? Color.FromArgb(31, 158, 138)
+                : (dark ? Color.FromArgb(60, 78, 87) : Color.FromArgb(214, 226, 231));
         }
-
-        SetLabelColors(this, foreground);
-
+        SetLabelColors(this, fg);
         drives.BackColor = surface;
-        drives.ForeColor = foreground;
-
+        drives.ForeColor = fg;
         folderPath.BackColor = surface;
-        folderPath.ForeColor = foreground;
-
+        folderPath.ForeColor = fg;
         log.BackColor = surface;
-        log.ForeColor = foreground;
-
+        log.ForeColor = fg;
         meter.Dark = dark;
-
         themeButton.Text = dark ? "☀ Light" : "☾ Dark";
         Invalidate(true);
     }
@@ -395,7 +310,7 @@ public sealed class MainForm : Form
 
         openButton.Enabled = !busy;
         closeButton.Enabled = !busy;
-        checkButton.Enabled = !busy;
+        browseButton.Enabled = !busy;
         startButton.Enabled = !busy;
         drives.Enabled = !busy;
         stopButton.Enabled = busy;
@@ -416,12 +331,65 @@ public sealed class MainForm : Form
         if (drives.Items.Count > 0)
             drives.SelectedIndex = 0;
         else
-            driveStatus.Text = "DVD 드라이브 없음";
+            driveStatus.Text = "ODD 드라이브 없음";
     }
 
     private string? SelectedDrive()
     {
         return drives.SelectedItem?.ToString();
+    }
+
+
+    private void UpdateDriveInfo()
+    {
+        string? root = SelectedDrive();
+        if (root is null) return;
+        driveStatus.Text = DiscReady(root) ? "준비됨" : "디스크 없음";
+        driveKind.Text = "ODD";
+
+        // Win32_CDROMDrive.Name describes the device family, not inserted media.
+        _ = Task.Run(() => DetectDriveKind(root)).ContinueWith(task =>
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    if (!IsDisposed && SelectedDrive() == root)
+                        driveKind.Text = task.IsCompletedSuccessfully
+                            ? task.Result : "ODD";
+                }));
+            }
+            catch (InvalidOperationException) { }
+        });
+    }
+
+    private static string DetectDriveKind(string root)
+    {
+        try
+        {
+            Type? type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator");
+            if (type is null) return "ODD";
+            dynamic locator = Activator.CreateInstance(type)!;
+            dynamic wmi = locator.ConnectServer(".", @"root\cimv2");
+            foreach (dynamic device in wmi.ExecQuery("SELECT Drive, Name FROM Win32_CDROMDrive"))
+            {
+                string letter = Convert.ToString(device.Drive) ?? "";
+                if (letter.Length == 0 ||
+                    char.ToUpperInvariant(letter[0]) != char.ToUpperInvariant(root[0]))
+                    continue;
+
+                string name = (Convert.ToString(device.Name) ?? "").ToUpperInvariant();
+                if (name.Contains("BLU") || name.Contains("BD-") ||
+                    name.Contains("BDR") || name.Contains("BD ROM"))
+                    return "BD";
+                if (name.Contains("DVD")) return "DVD";
+                if (name.Contains("CD")) return "CD";
+                return "ODD";
+            }
+        }
+        catch { /* WMI unavailable; use ODD fallback. */ }
+        return "ODD";
     }
 
     private static bool DiscReady(string root)
@@ -477,13 +445,13 @@ public sealed class MainForm : Form
 
             if (ready)
             {
-                driveStatus.Text = "디스크 준비됨";
-                await StartFromDiscAsync();
+                driveStatus.Text = "준비됨";
+                AddLog("디스크 준비 완료. 복사 시작 버튼을 누르세요.");
             }
             else
             {
                 driveStatus.Text = "디스크 확인 필요";
-                AddLog("디스크 인식 후 '디스크 확인'을 누르세요.");
+                AddLog("디스크 인식 후 복사 시작 버튼을 누르세요.");
             }
         }
         catch (Exception ex)
@@ -493,7 +461,7 @@ public sealed class MainForm : Form
             MessageBox.Show(
                 "드라이브 명령을 실행하지 못했습니다.\n" +
                 "닫기 기능을 지원하지 않으면 직접 트레이를 닫고 " +
-                "'디스크 확인'을 누르세요.\n\n" + ex.Message,
+                "'복사 시작'을 누르세요.\n\n" + ex.Message,
                 "DVD 드라이브");
         }
         finally
@@ -525,7 +493,7 @@ public sealed class MainForm : Form
             Left = 20,
             Top = 22,
             Width = 380,
-            Text = "DVD_" + DateTime.Now.ToString("yyyyMMdd_HHmmss")
+            Text = "ODD_" + DateTime.Now.ToString("yyyyMMdd_HHmmss")
         };
 
         var ok = new Button
@@ -632,7 +600,7 @@ public sealed class MainForm : Form
 
         if (source == null)
         {
-            MessageBox.Show("DVD 드라이브를 선택하세요.");
+            MessageBox.Show("ODD 드라이브를 선택하세요.");
             return;
         }
 
@@ -641,14 +609,19 @@ public sealed class MainForm : Form
         if (!ready)
         {
             driveStatus.Text = "디스크 없음";
-            MessageBox.Show("DVD를 삽입한 후 디스크를 확인하세요.");
+            MessageBox.Show("디스크를 삽입한 후 복사 시작을 누르세요.");
             return;
         }
 
         driveStatus.Text = "디스크 준비됨";
 
-        string? destination = ChooseDestination();
-        if (destination == null) return;
+        string? destination = selectedDestination;
+        if (destination is null)
+        {
+            destination = ChooseDestination();
+            if (destination is null) return;
+            selectedDestination = destination;
+        }
 
         folderPath.Text = destination;
         await CopyDiscAsync(source, destination);
@@ -726,7 +699,7 @@ public sealed class MainForm : Form
 
             if (p.CompletedFiles > 0)
             {
-                Text = $"DVD Copier - {meter.Value}%";
+                Text = $"ODD Copier - {meter.Value}%";
             }
         });
 
@@ -916,7 +889,7 @@ public sealed class MainForm : Form
             cancellation = null;
 
             SetBusy(false);
-            Text = "DVD Copier v2.0";
+            Text = "ODD Copier v2.0";
         }
     }
 }
@@ -994,35 +967,39 @@ internal static class DriveHardware
     }
 }
 
-// ---------- Retro 7-segment LED meter ----------
+// ---------- Retro LED dot matrix progress meter ----------
 
 public sealed class LedMeter : Control
 {
     private int value;
     private bool phase;
 
-
-[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-public int Value
-{
-    get => value;
-    set
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public int Value
     {
-        this.value = Math.Clamp(value, 0, 100);
-        Invalidate();
+        get => value;
+        set { this.value = Math.Clamp(value, 0, 100); Invalidate(); }
     }
-}
 
-[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-public bool Running { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Running { get; set; }
 
-[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-public bool Dark { get; set; } = true;
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Dark { get; set; } = true;
 
-    private static readonly int[] DigitMasks =
+    private static readonly Dictionary<char, string[]> Glyphs = new()
     {
-        0x3F, 0x06, 0x5B, 0x4F, 0x66,
-        0x6D, 0x7D, 0x07, 0x7F, 0x6F
+        ['0'] = new[] { "11111", "10001", "10011", "10101", "11001", "10001", "11111" },
+        ['1'] = new[] { "00100", "01100", "00100", "00100", "00100", "00100", "01110" },
+        ['2'] = new[] { "11111", "00001", "00001", "11111", "10000", "10000", "11111" },
+        ['3'] = new[] { "11111", "00001", "00001", "01111", "00001", "00001", "11111" },
+        ['4'] = new[] { "10001", "10001", "10001", "11111", "00001", "00001", "00001" },
+        ['5'] = new[] { "11111", "10000", "10000", "11111", "00001", "00001", "11111" },
+        ['6'] = new[] { "11111", "10000", "10000", "11111", "10001", "10001", "11111" },
+        ['7'] = new[] { "11111", "00001", "00010", "00100", "01000", "01000", "01000" },
+        ['8'] = new[] { "11111", "10001", "10001", "11111", "10001", "10001", "11111" },
+        ['9'] = new[] { "11111", "10001", "10001", "11111", "00001", "00001", "11111" },
+        ['%'] = new[] { "11001", "11010", "00100", "00100", "01000", "10110", "00110" }
     };
 
     public LedMeter()
@@ -1040,156 +1017,65 @@ public bool Dark { get; set; } = true;
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        var g = e.Graphics;
-        g.Clear(Dark
-            ? Color.FromArgb(11, 20, 27)
-            : Color.FromArgb(222, 233, 238));
+        Color bg = Dark ? Color.FromArgb(13, 24, 29) : Color.FromArgb(225, 237, 237);
+        Color off = Dark ? Color.FromArgb(37, 61, 58) : Color.FromArgb(181, 208, 201);
+        Color on = Dark ? Color.FromArgb(68, 222, 169) : Color.FromArgb(16, 130, 104);
+        g.Clear(bg);
 
-        Color off = Dark
-            ? Color.FromArgb(35, 55, 53)
-            : Color.FromArgb(180, 200, 195);
+        // 5x7 LED dot matrix glyphs for the numeric percentage.
+        string str = value.ToString() + "%";
+        const int dot = 4, pitch = 6, stride = 38;
+        int startX = Math.Max(2, (Width - str.Length * stride) / 2);
+        int startY = Math.Max(4, (Height - 90) / 2);
+        using var dimBrush = new SolidBrush(off);
+        using var litBrush = new SolidBrush(on);
 
-        Color on = Color.FromArgb(51, 237, 122);
-
-        // 7-segment progress number.
-        string number = value.ToString();
-
-        int digitW = 32;
-        int digitH = 55;
-        int gap = 8;
-
-        int totalW = number.Length * (digitW + gap) + 42;
-        int startX = (Width - totalW) / 2;
-        int digitY = Math.Max(6, (Height - 100) / 2 - 8);
-
-        for (int i = 0; i < number.Length; i++)
+        for (int n = 0; n < str.Length; n++)
         {
-            DrawDigit(
-                g,
-                number[i] - '0',
-                startX + i * (digitW + gap),
-                digitY,
-                digitW,
-                digitH,
-                on,
-                off);
+            if (!Glyphs.TryGetValue(str[n], out var rows)) continue;
+            int gx = startX + n * stride;
+            for (int y = 0; y < 7; y++)
+            for (int x = 0; x < 5; x++)
+                g.FillEllipse(rows[y][x] == '1' ? litBrush : dimBrush,
+                    gx + x * pitch, startY + y * pitch, dot, dot);
         }
 
-        using (var font = new Font(
-            "Consolas", 24, FontStyle.Bold))
-        using (var brush = new SolidBrush(on))
+        // Ten LED sections, each covering 10%; current section's brightness
+        // represents 1% increments, and it pulses during copying.
+        int gap = 3, pad = 7;
+        int width = Math.Max(10, (Width - 2 * pad - 9 * gap) / 10);
+        int y0 = Height - 34;
+        int full = value / 10;
+        float fraction = value % 10 / 10f;
+
+        for (int block = 0; block < 10; block++)
         {
-            g.DrawString(
-                "%",
-                font,
-                brush,
-                startX + number.Length * (digitW + gap),
-                digitY + 12);
-        }
+            float intensity = block < full ? 1f
+                : block == full && value < 100 ? fraction : 0f;
+            if (Running && phase && block == full && value < 100)
+                intensity = 1f - intensity;
 
-        // Ten LED blocks: each block represents 10%.
-        int margin = 12;
-        int blockGap = 6;
-        int blockWidth =
-            Math.Max(3, (Width - margin * 2 -
-                blockGap * 9) / 10);
-
-        int blockHeight = 30;
-        int blockY = Height - 45;
-
-        int fullBlocks = value / 10;
-        float partialBrightness = (value % 10) / 10f;
-
-        for (int i = 0; i < 10; i++)
-        {
-            float intensity;
-
-            if (i < fullBlocks)
+            Color c = Mix(off, on, intensity);
+            using var brush = new SolidBrush(c);
+            int x0 = pad + block * (width + gap);
+            for (int r = 0; r < 3; r++)
+            for (int col = 0; col < 4; col++)
             {
-                intensity = 1f;
+                int dx = x0 + (col * (width - 5)) / 4;
+                g.FillEllipse(brush, dx, y0 + r * 7, 4, 4);
             }
-            else if (i == fullBlocks && value < 100)
-            {
-                intensity = partialBrightness;
-
-                // Invert the active block while copying.
-                if (Running && phase)
-                    intensity = 1f - intensity;
-            }
-            else
-            {
-                intensity = 0f;
-            }
-
-            Color current = Mix(off, on, intensity);
-
-            using var brush = new SolidBrush(current);
-
-            g.FillRectangle(
-                brush,
-                margin + i * (blockWidth + blockGap),
-                blockY,
-                blockWidth,
-                blockHeight);
         }
     }
 
     private static Color Mix(Color a, Color b, float t)
     {
-        t = Math.Clamp(t, 0f, 1f);
-
+        t = Math.Clamp(t, 0, 1);
         return Color.FromArgb(
             (int)(a.R + (b.R - a.R) * t),
             (int)(a.G + (b.G - a.G) * t),
             (int)(a.B + (b.B - a.B) * t));
-    }
-
-    private static void DrawDigit(
-        Graphics g,
-        int number,
-        int x,
-        int y,
-        int width,
-        int height,
-        Color on,
-        Color off)
-    {
-        int t = 5;
-        int half = height / 2;
-
-        Rectangle[] segments =
-        {
-            // a: top
-            new(x + t, y, width - 2*t, t),
-
-            // b: upper right
-            new(x + width - t, y + t, t, half - t),
-
-            // c: lower right
-            new(x + width - t, y + half, t, half - t),
-
-            // d: bottom
-            new(x + t, y + height - t, width - 2*t, t),
-
-            // e: lower left
-            new(x, y + half, t, half - t),
-
-            // f: upper left
-            new(x, y + t, t, half - t),
-
-            // g: middle
-            new(x + t, y + half - t/2, width - 2*t, t)
-        };
-
-        int mask = DigitMasks[Math.Clamp(number, 0, 9)];
-
-        for (int i = 0; i < 7; i++)
-        {
-            bool lit = (mask & (1 << i)) != 0;
-
-            using var brush = new SolidBrush(lit ? on : off);
-            g.FillRectangle(brush, segments[i]);
-        }
     }
 }
