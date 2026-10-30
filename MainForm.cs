@@ -197,14 +197,14 @@ public sealed class MainForm : Form
         playerLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Top, ColumnCount = 1, RowCount = 5,
-            Height = 148, Margin = new Padding(0), Padding = new Padding(0),
+            Height = 124, Margin = new Padding(0), Padding = new Padding(0),
             AutoSize = false
         };
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
         audioDetail.Controls.Add(playerLayout);
 
         var sources = TwoColumns();
@@ -1017,6 +1017,8 @@ public sealed class MainForm : Form
     private async Task CopyDiscAsync(
         string source, string destination)
     {
+        // Return to the full copy-focused layout during a copy operation.
+        if (playerExpanded) SetPlayerExpanded(false);
         SetBusy(true);
         cancellation = new CancellationTokenSource();
 
