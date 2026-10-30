@@ -187,10 +187,10 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5
         };
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
         playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
+        playerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20));
         playerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         audioDetail.Controls.Add(playerLayout);
 
