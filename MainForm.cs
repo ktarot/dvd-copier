@@ -302,8 +302,14 @@ public sealed class MainForm : Form
         playerExpanded = expand;
         audioDetail.Visible = expand;
         audioToggle.Text = expand ? "♫  음악 재생  ▴" : "♫  음악 재생  ▾";
-        rootLayout.RowStyles[6].Height = expand ? 158 : 34;
-        rootLayout.RowStyles[3].Height = expand ? 96 : 108;
+        // Keep a readable status area inside the fixed 360x640 window.
+        int[] heights = expand
+            ? new[] { 26, 54, 50, 96, 52, 52, 154, 0, 36 }
+            : new[] { 28, 60, 58, 108, 58, 58, 34, 0, 38 };
+        for (int i = 0; i < heights.Length; i++)
+        {
+            if (heights[i] > 0) rootLayout.RowStyles[i].Height = heights[i];
+        }
         rootLayout.PerformLayout();
     }
 
